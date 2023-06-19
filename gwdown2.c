@@ -681,6 +681,7 @@ static int try_fetch_file(struct gwdown_ctx *ctx)
 	CURLcode res;
 	CURL *ch;
 
+repeat:
 	printf("Trying to fetch the file %s...\n", ctx->url);
 	ctx->continue_parallel_download = false;
 	ch = ctx->threads[0].curl;
@@ -696,7 +697,7 @@ static int try_fetch_file(struct gwdown_ctx *ctx)
 	res = curl_easy_perform(ch);
 	if (res != CURLE_OK && !ctx->continue_parallel_download) {
 		fprintf(stderr, "try_fetch_file(): %s\n", curl_easy_strerror(res));
-		return -EIO;
+		goto repeat;
 	}
 
 	if (!ctx->continue_parallel_download)
