@@ -968,34 +968,83 @@ out:
 static void *observer_thread(void *arg)
 {
 	struct gwdown_ctx *ctx = arg;
-	double diff, percent;
-	uint64_t old, new;
+	const char *fsize_unit;
+	double fsize;
 
 	sleep(4);
+
+	fsize = (double)ctx->file_info.content_length;
+	if (fsize < 1024) {
+		fsize_unit = "B";
+	} else if (fsize < 1024 * 1024) {
+		fsize /= 1024;
+		fsize_unit = "KiB";
+	} else if (fsize < 1024 * 1024 * 1024) {
+		fsize /= 1024 * 1024;
+		fsize_unit = "MiB";
+	} else {
+		fsize /= 1024 * 1024 * 1024;
+		fsize_unit = "GiB";
+	}
+
 	while (1) {
-		const char *unit;
+		const char *speed_unit, *downloaded_unit, *eta_unit;
+		double percent, speed, downloaded, eta;
+		uint64_t old, new;
 
 		old = atomic_load(&ctx->total_downloaded_size);
 		sleep(1);
 		new = atomic_load(&ctx->total_downloaded_size);
 
-		diff = (double)(new - old);
-		if (diff < 1024) {
-			unit = "B/s";
-		} else if (diff < 1024 * 1024) {
-			diff /= 1024;
-			unit = "KiB/s";
+		percent = (double)new / ctx->file_info.content_length * 100;
+		speed = (double)(new - old);
+		downloaded = (double)new;
+		eta = (double)(ctx->file_info.content_length - new) / speed;
+
+		if (speed < 1024) {
+			speed_unit = "B/s";
+		} else if (speed < 1024 * 1024) {
+			speed /= 1024;
+			speed_unit = "KiB/s";
+		} else if (speed < 1024 * 1024 * 1024) {
+			speed /= 1024 * 1024;
+			speed_unit = "MiB/s";
 		} else {
-			diff /= 1024 * 1024;
-			unit = "MiB/s";
+			speed /= 1024 * 1024 * 1024;
+			speed_unit = "GiB/s";
 		}
 
-		percent = (double)new / ctx->file_info.content_length * 100.0;
+		if (downloaded < 1024) {
+			downloaded_unit = "B";
+		} else if (downloaded < 1024 * 1024) {
+			downloaded /= 1024;
+			downloaded_unit = "KiB";
+		} else if (downloaded < 1024 * 1024 * 1024) {
+			downloaded /= 1024 * 1024;
+			downloaded_unit = "MiB";
+		} else {
+			downloaded /= 1024 * 1024 * 1024;
+			downloaded_unit = "GiB";
+		}
 
-		printf("Downloaded %llu/%llu bytes (%.2f%%) at %.2f %s\n",
-		       (unsigned long long)new,
-		       (unsigned long long)ctx->file_info.content_length,
-		       percent, diff, unit);
+		if (eta < 60) {
+			eta_unit = "s";
+		} else if (eta < 60 * 60) {
+			eta /= 60;
+			eta_unit = "m";
+		} else if (eta < 60 * 60 * 24) {
+			eta /= 60 * 60;
+			eta_unit = "h";
+		} else {
+			eta /= 60 * 60 * 24;
+			eta_unit = "d";
+		}
+
+		printf("%s: [percent=%.2f%%, speed=%.2f%s, downloaded=%.2f%s, fsize=%.2f%s, eta=%.2f%s]\n",
+		       ctx->file_state.output, percent, speed, speed_unit,
+		       downloaded, downloaded_unit, fsize, fsize_unit,
+		       eta, eta_unit);
+		sleep(10);
 	}
 
 	return NULL;
