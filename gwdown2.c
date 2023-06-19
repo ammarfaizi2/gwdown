@@ -916,9 +916,13 @@ static void *run_gwdown_parallel_download_worker(void *data)
 	char range[128];
 	CURLcode res;
 
+repeat:
 	snprintf(range, sizeof(range), "%llu-%llu",
 		 (unsigned long long)thread->start,
 		 (unsigned long long)thread->end);
+
+	printf("Thread %u is restarting the download with range %s\n", thread->tid,
+	       range);
 
 	if (prepare_parallel_download(thread))
 		goto out;
@@ -938,6 +942,10 @@ static void *run_gwdown_parallel_download_worker(void *data)
 	if (res != CURLE_OK) {
 		fprintf(stderr, "run_gwdown_parallel_download_worker() thread %u: %s\n",
 			thread->tid, curl_easy_strerror(res));
+
+		thread->start = thread->offset;
+		thread->offset = thread->start;
+		goto repeat;
 	} else {
 		printf("Thread %u has finished the download!\n", thread->tid);
 	}
