@@ -933,6 +933,7 @@ static void *run_gwdown_parallel_download_worker(void *data)
 	curl_easy_setopt(ch, CURLOPT_HEADERDATA, thread);
 	curl_easy_setopt(ch, CURLOPT_WRITEFUNCTION, &paralell_download_body_curl_callback);
 	curl_easy_setopt(ch, CURLOPT_WRITEDATA, thread);
+	curl_easy_setopt(ch, CURLOPT_PROXY, "socks5h://10.77.77.1:3000");
 	res = curl_easy_perform(ch);
 	if (res != CURLE_OK) {
 		fprintf(stderr, "run_gwdown_parallel_download_worker() thread %u: %s\n",
