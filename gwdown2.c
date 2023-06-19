@@ -945,6 +945,8 @@ repeat:
 
 		thread->start = thread->offset;
 		thread->offset = thread->start;
+		close(thread->fd);
+		thread->fd = -1;
 		goto repeat;
 	} else {
 		printf("Thread %u has finished the download!\n", thread->tid);
