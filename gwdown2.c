@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * gwdown - Simple multi-threaded download tool
+ * gwdown2 - Multi-threaded downloader with proxy support.
  *
- * Author: Alviro Iskandar Setiawan <alviro.iskandar@gnuweeb.org>
- * License: GPLv2
- * Version: 0.1
+ * Copyright (C) 2023  Alviro Iskandar Setiawan <alviro.iskandar@gnuweeb.org>
+ * Copyright (C) 2023  Ammar Faizi <ammarfaizi2@gnuweeb.org>
+ *
+ * Forked from:
+ * https://github.com/alviroiskandar/gwdown.git
+ *
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -23,6 +26,7 @@
 #include <sys/mman.h>
 #include <libgen.h>
 #include <curl/curl.h>
+#include <stdatomic.h>
 
 #define DEFAULT_NUM_THREADS 4
 #define MIN_PARALLEL_DOWNLOAD_SIZE 65536ull
@@ -84,8 +88,10 @@ struct gwdown_ctx {
 	struct gwdown_file_state 	file_state;
 	pthread_cond_t			download_finished_cond;
 	pthread_mutex_t			download_finished_mutex;
+	_Atomic(uint64_t)		total_downloaded_size;
 	uint64_t			per_thread_size;
 	uint16_t			num_threads;
+	pthread_t			observer_thread;
 };
 
 static struct gwdown_ctx *g_ctx;
@@ -647,8 +653,12 @@ static size_t try_fetch_file_body_curl_callback(void *ptr, size_t size,
 			return 0;
 
 		print_single_thread_download_info(ctx);
-		printf("Downloading file %s (%llu bytes)...\n", state->output,
-		       (unsigned long long)info->content_length);
+		if (info->content_length == 0)
+			printf("Downloading file %s...\n", state->output);
+		else
+			printf("Downloading file %s (%llu bytes)...\n",
+			       state->output,
+			       (unsigned long long)info->content_length);
 	}
 
 	wr_ret = write(state->fd, ptr, rsize);
@@ -842,6 +852,7 @@ static size_t paralell_download_body_curl_callback(void *ptr, size_t size,
 		thread->offset += wr_ret;
 	}
 
+	atomic_fetch_add(&ctx->total_downloaded_size, (uint64_t)wr_ret);
 	return (size_t)wr_ret;
 }
 
@@ -943,11 +954,64 @@ out:
 	return data;
 }
 
+static void *observer_thread(void *arg)
+{
+	struct gwdown_ctx *ctx = arg;
+	double diff, percent;
+	uint64_t old, new;
+
+	sleep(4);
+	while (1) {
+		const char *unit;
+
+		old = atomic_load(&ctx->total_downloaded_size);
+		sleep(1);
+		new = atomic_load(&ctx->total_downloaded_size);
+
+		diff = (double)(new - old);
+		if (diff < 1024) {
+			unit = "B/s";
+		} else if (diff < 1024 * 1024) {
+			diff /= 1024;
+			unit = "KiB/s";
+		} else {
+			diff /= 1024 * 1024;
+			unit = "MiB/s";
+		}
+
+		percent = (double)new / ctx->file_info.content_length * 100.0;
+
+		printf("Downloaded %llu/%llu bytes (%.2f%%) at %.2f %s\n",
+		       (unsigned long long)new,
+		       (unsigned long long)ctx->file_info.content_length,
+		       percent, diff, unit);
+	}
+
+	return NULL;
+}
+
+static int run_observer_thread(struct gwdown_ctx *ctx)
+{
+	pthread_t *ot = &ctx->observer_thread;
+	int ret;
+
+	printf("Starting observer thread...\n");
+	ret = pthread_create(ot, NULL, &observer_thread, ctx);
+	if (ret)
+		return -ret;
+
+	return 0;
+}
+
 static int run_parallel_download(struct gwdown_ctx *ctx)
 {
 	struct gwdown_thread *thread;
 	int ret;
 	int i;
+
+	ret = run_observer_thread(ctx);
+	if (ret)
+		return ret;
 
 	ctx->per_thread_size = ctx->file_info.content_length / ctx->num_threads;
 

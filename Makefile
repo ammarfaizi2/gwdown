@@ -2,12 +2,12 @@
 CC ?= cc
 CLFAGS ?= -Wall -Wextra -g -I/usr/include -I/usr/local/include -L/usr/lib -L/usr/local/lib -O2
 
-all: gwdown
+all: gwdown2
 
-gwdown: gwdown.c
-	$(CC) $(CLFAGS) -o gwdown gwdown.c -lcurl -lpthread
+gwdown2: gwdown2.c
+	$(CC) $(CLFAGS) -o gwdown2 gwdown2.c -lcurl -lpthread
 
 clean:
-	rm -f gwdown
+	rm -f gwdown2
 
 .PHONY: clean
